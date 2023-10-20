@@ -101,6 +101,8 @@ public class CdcTools {
         String database = params.get("database");
         String tablePrefix = params.get("table-prefix");
         String tableSuffix = params.get("table-suffix");
+        String tableNameCaseConversion = params.get("table-name-case-conversion");
+        String tableFieldCaseConversion = params.get("table-field-case-conversion");
         String includingTables = params.get("including-tables");
         String excludingTables = params.get("excluding-tables");
         boolean createTableOnly = params.has("create-table-only");
@@ -112,7 +114,7 @@ public class CdcTools {
         Configuration sinkConfig = Configuration.fromMap(sinkMap);
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        databaseSync.create(env, database, config, tablePrefix, tableSuffix, includingTables, excludingTables, ignoreDefaultValue, sinkConfig, tableMap, createTableOnly, useNewSchemaChange);
+        databaseSync.create(env, database, config, tablePrefix, tableSuffix, tableNameCaseConversion, tableFieldCaseConversion, includingTables, excludingTables, ignoreDefaultValue, sinkConfig, tableMap, createTableOnly, useNewSchemaChange);
         databaseSync.build();
         if(StringUtils.isNullOrWhitespaceOnly(jobName)){
             jobName = String.format("%s-Doris Sync Database: %s", type, config.getString("database-name","db"));

@@ -67,8 +67,11 @@ public class CdcMysqlSyncDatabaseCase {
         String excludingTables = "";
         boolean ignoreDefaultValue = false;
         boolean useNewSchemaChange = false;
+        // 1-lowerCase  2-upperCase
+        String tableNameCaseConversion = "";
+        String tableFieldCaseConversion = "";
         DatabaseSync databaseSync = new MysqlDatabaseSync();
-        databaseSync.create(env,database,config,tablePrefix,tableSuffix,includingTables,excludingTables,ignoreDefaultValue,sinkConf,tableConfig, false, useNewSchemaChange);
+        databaseSync.create(env,database,config,tablePrefix,tableSuffix,tableNameCaseConversion,tableFieldCaseConversion,includingTables,excludingTables,ignoreDefaultValue,sinkConf,tableConfig, false, useNewSchemaChange);
         databaseSync.build();
         env.execute(String.format("MySQL-Doris Database Sync: %s", database));
 

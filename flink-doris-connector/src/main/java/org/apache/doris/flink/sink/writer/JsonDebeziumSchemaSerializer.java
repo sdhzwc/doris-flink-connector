@@ -68,6 +68,8 @@ import java.util.regex.Pattern;
 import static org.apache.doris.flink.sink.writer.LoadConstants.DORIS_DELETE_SIGN;
 import static org.apache.doris.flink.sink.writer.LoadConstants.LINE_DELIMITER_DEFAULT;
 import static org.apache.doris.flink.sink.writer.LoadConstants.LINE_DELIMITER_KEY;
+import static org.apache.doris.flink.tools.cdc.DatabaseSync.TABLE_FIELD_TO_LOWER_CASE;
+import static org.apache.doris.flink.tools.cdc.DatabaseSync.TABLE_FIELD_TO_UPPER_CASE;
 
 public class JsonDebeziumSchemaSerializer implements DorisRecordSerializer<String> {
 
@@ -96,11 +98,13 @@ public class JsonDebeziumSchemaSerializer implements DorisRecordSerializer<Strin
     private String lineDelimiter = LINE_DELIMITER_DEFAULT;
     private boolean ignoreUpdateBefore = true;
     private SourceConnector sourceConnector;
+    private String tableFieldCaseConversion;
 
     public JsonDebeziumSchemaSerializer(DorisOptions dorisOptions,
             Pattern pattern,
             String sourceTableName,
-            boolean newSchemaChange) {
+            boolean newSchemaChange,
+            String tableFieldCaseConversion) {
         this.dorisOptions = dorisOptions;
         this.addDropDDLPattern = pattern == null ? Pattern.compile(addDropDDLRegex, Pattern.CASE_INSENSITIVE) : pattern;
         String[] tableInfo = dorisOptions.getTableIdentifier().split("\\.");
@@ -114,14 +118,16 @@ public class JsonDebeziumSchemaSerializer implements DorisRecordSerializer<Strin
         this.newSchemaChange = newSchemaChange;
         this.firstLoad = true;
         this.firstSchemaChange = true;
+        this.tableFieldCaseConversion = tableFieldCaseConversion;
     }
 
     public JsonDebeziumSchemaSerializer(DorisOptions dorisOptions,
             Pattern pattern,
             String sourceTableName,
             boolean newSchemaChange,
-            DorisExecutionOptions executionOptions) {
-        this(dorisOptions, pattern, sourceTableName, newSchemaChange);
+            DorisExecutionOptions executionOptions,
+            String tableFieldCaseConversion) {
+        this(dorisOptions, pattern, sourceTableName, newSchemaChange,tableFieldCaseConversion);
         if (executionOptions != null) {
             this.lineDelimiter = executionOptions.getStreamLoadProp()
                     .getProperty(LINE_DELIMITER_KEY, LINE_DELIMITER_DEFAULT);
@@ -429,7 +435,7 @@ public class JsonDebeziumSchemaSerializer implements DorisRecordSerializer<Strin
                 String col = matcher.group(3);
                 String type = matcher.group(5);
                 type = handleType(type);
-                ddl = String.format(EXECUTE_DDL, dorisOptions.getTableIdentifier(), op, col, type);
+                ddl = String.format(EXECUTE_DDL, dorisOptions.getTableIdentifier(), op, getKeyConvert(col), type);
                 LOG.info("parse ddl:{}", ddl);
                 return ddl;
             }
@@ -549,6 +555,7 @@ public class JsonDebeziumSchemaSerializer implements DorisRecordSerializer<Strin
         private String sourceTableName;
         private boolean newSchemaChange;
         private DorisExecutionOptions executionOptions;
+        private String tableFieldCaseConversion;
 
         public JsonDebeziumSchemaSerializer.Builder setDorisOptions(DorisOptions dorisOptions) {
             this.dorisOptions = dorisOptions;
@@ -575,9 +582,14 @@ public class JsonDebeziumSchemaSerializer implements DorisRecordSerializer<Strin
             return this;
         }
 
+        public Builder setTableFieldCaseConversion(String tableFieldCaseConversion) {
+            this.tableFieldCaseConversion = tableFieldCaseConversion;
+            return this;
+        }
+
         public JsonDebeziumSchemaSerializer build() {
             return new JsonDebeziumSchemaSerializer(dorisOptions, addDropDDLPattern, sourceTableName, newSchemaChange,
-                    executionOptions);
+                    executionOptions, tableFieldCaseConversion);
         }
     }
 
@@ -597,6 +609,16 @@ public class JsonDebeziumSchemaSerializer implements DorisRecordSerializer<Strin
 
         return type;
 
+    }
+
+    public String getKeyConvert(String key) {
+        if (TABLE_FIELD_TO_LOWER_CASE.equals(tableFieldCaseConversion)){
+            key = key.toLowerCase();
+        }
+        if (TABLE_FIELD_TO_UPPER_CASE.equals(tableFieldCaseConversion)){
+            key = key.toUpperCase();
+        }
+        return key;
     }
 
 }

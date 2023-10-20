@@ -25,6 +25,7 @@ import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
 public class ParsingProcessFunction extends ProcessFunction<String, Void> {
@@ -46,7 +47,7 @@ public class ParsingProcessFunction extends ProcessFunction<String, Void> {
         JsonNode recordRoot = objectMapper.readValue(record, JsonNode.class);
         String tableName = extractJsonNode(recordRoot.get("source"), "table");
         String dorisName = converter.convert(tableName);
-        context.output(getRecordOutputTag(dorisName), record);
+        context.output(getRecordOutputTag(dorisName), recordConvert(record));
     }
 
     private String extractJsonNode(JsonNode record, String key) {
@@ -61,5 +62,29 @@ public class ParsingProcessFunction extends ProcessFunction<String, Void> {
     public static OutputTag<String> createRecordOutputTag(String tableName) {
         return new OutputTag<String>("record-" + tableName) {
         };
+    }
+
+    public String recordConvert(String record) throws Exception {
+        String tableFieldCaseConversion = converter.getTableFieldCaseConversion();
+        if (tableFieldCaseConversion == null || tableFieldCaseConversion == ""){
+            return record;
+        }else {
+            JsonNode recordRoot = objectMapper.readValue(record, JsonNode.class);
+            HashMap<String, Object> afterMap = new HashMap<>();
+            JsonNode afterJsonNode = recordRoot.get("after");
+            if (afterJsonNode == null){
+                return record;
+            }else {
+                Iterator<String> fieldNames = afterJsonNode.fieldNames();
+                while (fieldNames.hasNext()){
+                    String key = fieldNames.next();
+                    String value = extractJsonNode(afterJsonNode, key);
+                    afterMap.put(converter.tableFieldConvert(key),value);
+                }
+                Map<String, Object> readMap = objectMapper.readValue(record, Map.class);
+                readMap.put("after",afterMap);
+                return objectMapper.writeValueAsString(readMap);
+            }
+        }
     }
 }

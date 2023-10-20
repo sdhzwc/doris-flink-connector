@@ -17,6 +17,7 @@
 package org.apache.doris.flink.tools.cdc;
 
 import org.apache.doris.flink.catalog.doris.DorisSystem;
+import org.apache.doris.flink.catalog.doris.FieldSchema;
 import org.apache.doris.flink.catalog.doris.TableSchema;
 import org.apache.doris.flink.cfg.DorisConnectionOptions;
 import org.apache.doris.flink.cfg.DorisExecutionOptions;
@@ -41,15 +42,21 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public abstract class DatabaseSync {
     private static final Logger LOG = LoggerFactory.getLogger(DatabaseSync.class);
     private static final String LIGHT_SCHEMA_CHANGE = "light_schema_change";
     private static final String TABLE_NAME_OPTIONS = "table-name";
+    public static final String TABLE_NAME_TO_LOWER_CASE = "1";
+    public static final String TABLE_NAME_TO_UPPER_CASE = "2";
+    public static final String TABLE_FIELD_TO_LOWER_CASE = "1";
+    public static final String TABLE_FIELD_TO_UPPER_CASE = "2";
     protected Configuration config;
     protected String database;
     protected TableNameConverter converter;
@@ -63,6 +70,8 @@ public abstract class DatabaseSync {
     private boolean newSchemaChange;
     protected String includingTables;
     protected String excludingTables;
+    protected String tableNameCaseConversion;
+    protected String tableFieldCaseConversion;
 
     public abstract Connection getConnection() throws SQLException;
 
@@ -71,13 +80,16 @@ public abstract class DatabaseSync {
     public abstract DataStreamSource<String> buildCdcSource(StreamExecutionEnvironment env);
 
     public void create(StreamExecutionEnvironment env, String database, Configuration config,
-                       String tablePrefix, String tableSuffix, String includingTables,
+                       String tablePrefix, String tableSuffix, String tableNameCaseConversion,
+                       String tableFieldCaseConversion, String includingTables,
                        String excludingTables, boolean ignoreDefaultValue, Configuration sinkConfig,
             Map<String, String> tableConfig, boolean createTableOnly, boolean useNewSchemaChange) {
         this.env = env;
         this.config = config;
         this.database = database;
-        this.converter = new TableNameConverter(tablePrefix, tableSuffix);
+        this.converter = new TableNameConverter(tablePrefix, tableSuffix, tableNameCaseConversion, tableFieldCaseConversion);
+        this.tableNameCaseConversion = tableNameCaseConversion == null ? "" : tableNameCaseConversion;
+        this.tableFieldCaseConversion = tableFieldCaseConversion == null ? "" : tableFieldCaseConversion;
         this.includingTables = includingTables;
         this.excludingTables = excludingTables;
         this.includingPattern = includingTables == null ? null : Pattern.compile(includingTables);
@@ -111,6 +123,9 @@ public abstract class DatabaseSync {
             String dorisTable = converter.convert(schema.getTableName());
             if (!dorisSystem.tableExists(database, dorisTable)) {
                 TableSchema dorisSchema = schema.convertTableSchema(tableConfig);
+                dorisSchema.setKeys(keysConvert(dorisSchema.getKeys()));
+                dorisSchema.setDistributeKeys(keysConvert(dorisSchema.getDistributeKeys()));
+                dorisSchema.setFields(tableFieldsConvert(dorisSchema.getFields()));
                 //set doris target database
                 dorisSchema.setDatabase(database);
                 dorisSchema.setTable(dorisTable);
@@ -216,6 +231,7 @@ public abstract class DatabaseSync {
                         .setDorisOptions(dorisBuilder.build())
                         .setNewSchemaChange(newSchemaChange)
                         .setExecutionOptions(executionOptions)
+                        .setTableFieldCaseConversion(tableFieldCaseConversion)
                         .build())
                 .setDorisOptions(dorisBuilder.build());
         return builder.build();
@@ -240,18 +256,84 @@ public abstract class DatabaseSync {
         private static final long serialVersionUID = 1L;
         private final String prefix;
         private final String suffix;
+        private final String tableNameCaseConversion;
+        private final String tableFieldCaseConversion;
 
         TableNameConverter(){
-            this("","");
+            this("","","","");
         }
 
-        TableNameConverter(String prefix, String suffix) {
+        TableNameConverter(String prefix, String suffix, String tableNameCaseConversion, String tableFieldCaseConversion) {
             this.prefix = prefix == null ? "" : prefix;
             this.suffix = suffix == null ? "" : suffix;
+            this.tableNameCaseConversion = tableNameCaseConversion;
+            this.tableFieldCaseConversion = tableFieldCaseConversion;
         }
 
         public String convert(String tableName) {
-            return prefix + tableName + suffix;
+            return prefix + tableNameConvert(tableName) + suffix;
         }
+
+        public String getTableFieldCaseConversion() {
+            return tableFieldCaseConversion;
+        }
+
+        public  String tableNameConvert(String tableName) {
+            if (TABLE_NAME_TO_LOWER_CASE.equals(tableNameCaseConversion)){
+                tableName = tableName.toLowerCase();
+            }
+            if (TABLE_NAME_TO_UPPER_CASE.equals(tableNameCaseConversion)){
+                tableName = tableName.toUpperCase();
+            }
+            return tableName;
+        }
+
+        public String tableFieldConvert(String tableField) {
+            if (TABLE_FIELD_TO_LOWER_CASE.equals(tableFieldCaseConversion)){
+                tableField = tableField.toLowerCase();
+            }
+            if (TABLE_FIELD_TO_UPPER_CASE.equals(tableFieldCaseConversion)){
+                tableField = tableField.toUpperCase();
+            }
+            return tableField;
+        }
+    }
+
+    private List<String> keysConvert(List<String> keys) {
+        return keys.stream().map(this::tableFieldConvert).collect(Collectors.toList());
+    }
+
+    private Map<String, FieldSchema> tableFieldsConvert(Map<String, FieldSchema> fields) {
+        Map<String, FieldSchema> newFiles = new LinkedHashMap<>();
+        for (Map.Entry<String, FieldSchema> fieldSchemaEntry : fields.entrySet()) {
+            String fileKey = fieldSchemaEntry.getKey();
+            if (fileKey != null) {
+                fileKey = tableFieldConvert(fileKey);
+            }
+            FieldSchema fileValue = getFieldSchemaConvert(fieldSchemaEntry);
+            newFiles.put(fileKey, fileValue);
+        }
+        return newFiles;
+    }
+
+    private FieldSchema getFieldSchemaConvert(Map.Entry<String, FieldSchema> fieldSchemaEntry) {
+        FieldSchema fileValue = fieldSchemaEntry.getValue();
+        String name = fileValue.getName();
+        if (name != null) {
+            fileValue.setName(tableFieldConvert(name));
+        }
+        String comment = fileValue.getComment();
+        fileValue.setComment(tableFieldConvert(comment));
+        return fileValue;
+    }
+
+    public String tableFieldConvert(String tableField) {
+        if (TABLE_FIELD_TO_LOWER_CASE.equals(tableFieldCaseConversion)){
+            tableField = tableField.toLowerCase();
+        }
+        if (TABLE_FIELD_TO_UPPER_CASE.equals(tableFieldCaseConversion)){
+            tableField = tableField.toUpperCase();
+        }
+        return tableField;
     }
 }

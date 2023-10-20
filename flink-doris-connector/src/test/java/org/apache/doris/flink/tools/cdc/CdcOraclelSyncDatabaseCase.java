@@ -73,8 +73,11 @@ public class CdcOraclelSyncDatabaseCase {
         String excludingTables = "";
         boolean ignoreDefaultValue = false;
         boolean useNewSchemaChange = false;
+        // 1-lowerCase  2-upperCase
+        String tableNameCaseConversion = "";
+        String tableFieldCaseConversion = "";
         DatabaseSync databaseSync = new OracleDatabaseSync();
-        databaseSync.create(env,database,config,tablePrefix,tableSuffix,includingTables,excludingTables,ignoreDefaultValue,sinkConf,tableConfig, false, useNewSchemaChange);
+        databaseSync.create(env,database,config,tablePrefix,tableSuffix,tableNameCaseConversion,tableFieldCaseConversion,includingTables,excludingTables,ignoreDefaultValue,sinkConf,tableConfig, true, useNewSchemaChange);
         databaseSync.build();
         env.execute(String.format("Oracle-Doris Database Sync: %s", database));
 
